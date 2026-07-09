@@ -43,6 +43,7 @@ next-env.d.ts
 # Environment files
 backend/.env
 backend/.env.*
+backend/.venv/.env
 frontend/.env.local
 frontend/.env
 frontend/.env.*
