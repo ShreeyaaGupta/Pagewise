@@ -10,6 +10,14 @@ from dotenv import load_dotenv
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
+from pydantic import BaseModel
+from typing import Optional
+
+# --- NEW: Data model for our search request ---
+class SearchQuery(BaseModel):
+    query: str
+    document_id: Optional[str] = None # Optional: If we only want to search one specific PDF
+    top_k: int = 3 # How many paragraphs to return 
 
 # 1. Setup & Config
 load_dotenv()
@@ -139,6 +147,54 @@ async def upload_document(
 
     except Exception as e:
         print(f"!!! BACKEND ERROR: {str(e)} !!!")
+        raise HTTPException(status_code=500, detail=str(e))
+
+        # --- PHASE 3: THE SEMANTIC SEARCH ENDPOINT ---
+@app.post("/search")
+async def search_documents(search: SearchQuery):
+    try:
+        print(f"🔎 Searching for: '{search.query}'")
+        
+        # 1. Turn the user's question into a math vector using our local model
+        query_vector = model.encode(search.query).tolist()
+        
+        # Format the vector strictly for Neon/pgvector (e.g., '[0.1, 0.2, ...]')
+        query_vector_str = "[" + ",".join(map(str, query_vector)) + "]"
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # 2. Run the Vector Similarity Search
+        if search.document_id:
+            # Search inside one specific document
+            cur.execute("""
+                SELECT chunk_text, 1 - (embedding <=> %s::vector) AS similarity 
+                FROM document_chunks 
+                WHERE document_id = %s
+                ORDER BY embedding <=> %s::vector 
+                LIMIT %s
+            """, (query_vector_str, search.document_id, query_vector_str, search.top_k))
+        else:
+            # Search across your entire library of documents
+            cur.execute("""
+                SELECT chunk_text, 1 - (embedding <=> %s::vector) AS similarity 
+                FROM document_chunks 
+                ORDER BY embedding <=> %s::vector 
+                LIMIT %s
+            """, (query_vector_str, query_vector_str, search.top_k))
+
+        results = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        # 3. Clean up the results to send back to the frontend
+        chunks = [{"text": row[0], "score": round(row[1], 4)} for row in results]
+
+        print(f"✅ Found {len(chunks)} relevant chunks!")
+        return {"query": search.query, "results": chunks}
+
+    except Exception as e:
+        print(f"!!! SEARCH ERROR: {str(e)} !!!")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
