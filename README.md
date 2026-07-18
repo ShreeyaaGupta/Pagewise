@@ -1,5 +1,4 @@
 # Pagewise
-# Pagewise
 
 Pagewise is a RAG-based document Q&A platform built for exploring and querying personal documents (PDFs, PPTX, DOCX, images) with source-grounded, cited answers.
 
