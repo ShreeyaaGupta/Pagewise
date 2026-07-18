@@ -28,8 +28,3 @@ Pagewise is a RAG-based document Q&A platform built for exploring and querying p
 4. **Answer with Citations** — The model generates a response grounded in retrieved chunks, with citations pointing back to the source.
 5. **Context Scoping** — Users can select a specific document from their sidebar to scope the conversation, or query across all documents.
 
-
-
-## License
-
-TBD
