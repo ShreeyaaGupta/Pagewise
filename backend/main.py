@@ -207,7 +207,7 @@ async def delete_document(document_id: str):
 @app.post("/search")
 async def search_documents(search: SearchQuery):
     try:
-        print(f"🔎 Searching for: '{search.query}'")
+        print(f"Searching for: '{search.query}'")
         
         query_vector = model.encode(search.query).tolist()
         query_vector_str = "[" + ",".join(map(str, query_vector)) + "]"
@@ -333,7 +333,7 @@ async def chat_with_document(search: SearchQuery):
         sources_metadata = [] 
         
         try:
-            print("🌍 Fetching web search results using Tavily...")
+            print("Fetching web search results using Tavily...")
             tavily_client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
             
             # Request search results from Tavily
@@ -453,4 +453,5 @@ async def chat_with_document(search: SearchQuery):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
