@@ -28,13 +28,19 @@ class SearchQuery(BaseModel):
 load_dotenv()
 app = FastAPI(title="Pagewise API - Phase 2 (Optimized)")
 
+origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/")
+def health_check():
+    return {"status": "ok", "message": "Pagewise API is running"}
 
 print("Loading embedding model...")
 model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -453,5 +459,4 @@ async def chat_with_document(search: SearchQuery):
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
