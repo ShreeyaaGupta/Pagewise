@@ -1,0 +1,56 @@
+name: Keep Supabase Alive
+
+on:
+  schedule:
+    # Runs every 3 days at 00:00 UTC to prevent 7-day auto-pause on Supabase Free Tier
+    - cron: '0 0 */3 * *'
+  workflow_dispatch: # Allows manual triggering from the GitHub Actions tab
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Keep Supabase Project Active
+        run: |
+          # Sanitize SUPABASE_URL: remove trailing slashes and spaces
+          RAW_URL="${{ secrets.SUPABASE_URL }}"
+          CLEAN_URL=$(echo "$RAW_URL" | sed -e 's/[[:space:]]*$//' -e 's/\/*$//')
+          
+          if [ -z "$CLEAN_URL" ]; then
+            echo "::error:: SUPABASE_URL secret is empty. Please set it in GitHub Repository Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+          if [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
+            echo "::error:: SUPABASE_ANON_KEY secret is empty. Please set it in GitHub Repository Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+
+          TARGET_ENDPOINT="${CLEAN_URL}/rest/v1/"
+          echo "Pinging Supabase endpoint: ${TARGET_ENDPOINT}"
+
+          # Make request and capture HTTP status code and response body
+          HTTP_RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Accept: application/json" \
+            "${TARGET_ENDPOINT}")
+
+          STATUS_CODE=$(echo "$HTTP_RESPONSE" | grep "HTTP_STATUS:" | sed 's/HTTP_STATUS://')
+          BODY=$(echo "$HTTP_RESPONSE" | sed '/HTTP_STATUS:/d')
+
+          echo "Response Status Code: $STATUS_CODE"
+          echo "Response Body: $BODY"
+
+          if [ "$STATUS_CODE" -ge 200 ] && [ "$STATUS_CODE" -lt 400 ]; then
+            echo "Successfully pinged Supabase project! Database activity recorded and kept active."
+          elif [ "$STATUS_CODE" -eq 400 ]; then
+            echo "::error:: Received HTTP 400 (Bad Request). Please check if SUPABASE_URL in GitHub Secrets includes '/rest/v1' or extra paths. It should be formatted as: https://<project-ref>.supabase.co"
+            exit 1
+          elif [ "$STATUS_CODE" -eq 401 ]; then
+            echo "::error:: Received HTTP 401 (Unauthorized). Please check if SUPABASE_ANON_KEY in GitHub Secrets is valid."
+            exit 1
+          else
+            echo "::error:: Unexpected HTTP status code $STATUS_CODE received from Supabase."
+            exit 1
+          fi
