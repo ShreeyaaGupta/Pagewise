@@ -24,9 +24,8 @@ class SearchQuery(BaseModel):
     top_k: int = 3 
     user_id: Optional[str] = None 
 
-# 1. Setup & Config
 load_dotenv()
-app = FastAPI(title="Pagewise API - Phase 2 (Optimized)")
+app = FastAPI(title="Pagewise API")
 
 origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",")]
 
@@ -77,7 +76,7 @@ def process_pdf_background(file_bytes: bytes, doc_id: str):
             print(f"[{doc_id}] No text found in PDF.")
             return
 
-        print(f"[{doc_id}] Creating vectors for {len(chunks)} chunks simultaneously...")
+        print(f"[{doc_id}] Creating vectors for {len(chunks)} chunks simultaneously")
         
         embeddings = model.encode(chunks).tolist()
 
