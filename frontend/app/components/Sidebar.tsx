@@ -1,15 +1,24 @@
-'use client'
+'use client';
 
 import { useState, useEffect, Suspense } from "react";
-import { SignInButton, UserButton, useUser } from "@clerk/nextjs";
-import { Folder, FileText, UploadCloud, Library, Loader2, Trash2, MessageSquarePlus } from "lucide-react";
+import { SignInButton, UserButton, useUser, useAuth } from "@clerk/nextjs";
+import { FileText, UploadCloud, Library, Loader2, Trash2, MessageSquarePlus, AlertCircle } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
+
+interface DocumentItem {
+  id: string;
+  filename: string;
+  s3_key: string;
+  status?: "processing" | "ready" | "failed" | "empty";
+  error_message?: string;
+}
 
 function SidebarContent() {
   const { isLoaded, isSignedIn, user } = useUser();
+  const { getToken } = useAuth();
   const [status, setStatus] = useState<string>("");
   const [isUploading, setIsUploading] = useState(false);
-  const [documents, setDocuments] = useState<{ id: string; filename: string; s3_key: string }[]>([]);
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
   
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -18,7 +27,12 @@ function SidebarContent() {
   const fetchDocuments = async () => {
     if (!user) return;
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/documents?user_id=${user.id}`);
+      const token = await getToken();
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/documents`, {
+        headers: {
+          "Authorization": `Bearer ${token}`,
+        },
+      });
       if (res.ok) {
         const data = await res.json();
         setDocuments(data);
@@ -36,13 +50,29 @@ function SidebarContent() {
     }
   }, [isSignedIn, user]);
 
+  // Polling: if any document is processing, poll every 3s until completion
+  useEffect(() => {
+    const hasProcessing = documents.some((doc) => doc.status === "processing");
+    if (!hasProcessing || !isSignedIn || !user) return;
+
+    const interval = setInterval(() => {
+      fetchDocuments();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [documents, isSignedIn, user]);
+
   const handleDelete = async (docId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm("Are you sure you want to delete this document? This will also delete its chat history.")) return;
     
     try {
+      const token = await getToken();
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/documents/${docId}`, {
         method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+        },
       });
       if (res.ok) {
         // If the deleted document was the active one, redirect to home to clear chat
@@ -66,20 +96,37 @@ function SidebarContent() {
 
     const formData = new FormData();
     formData.append("file", selectedFile);
-    formData.append("user_id", user.id);
 
     try {
+      const token = await getToken();
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/upload`, {
         method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+        },
         body: formData,
       });
 
       if (res.ok) {
-        setStatus("Upload successful!");
-        fetchDocuments(); // Refresh document list
+        setStatus("Uploaded! Generating embeddings...");
+        fetchDocuments(); // Refresh document list with 'processing' state
       } else {
-        const error = await res.json();
-        setStatus(`Failed: ${error.detail}`);
+        let errorMsg = "Upload failed";
+        try {
+          const error = await res.json();
+          if (typeof error.detail === "string") {
+            errorMsg = error.detail;
+          } else if (Array.isArray(error.detail)) {
+            errorMsg = error.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ");
+          } else if (error.detail) {
+            errorMsg = JSON.stringify(error.detail);
+          } else if (error.message) {
+            errorMsg = error.message;
+          }
+        } catch {
+          errorMsg = `HTTP Error ${res.status}: ${res.statusText}`;
+        }
+        setStatus(`Failed: ${errorMsg}`);
       }
     } catch (err) {
       console.error(err);
@@ -108,34 +155,67 @@ function SidebarContent() {
           </h2>
           
           <div className="space-y-1">
-            {documents.map((doc) => (
-              <div
-                key={doc.id}
-                onClick={() => router.push(`/?docId=${doc.id}&docName=${encodeURIComponent(doc.filename)}`)}
-                className={`group rounded-md flex items-center justify-between p-2 text-xs font-medium cursor-pointer transition border ${
-                  activeDocId === doc.id 
-                    ? "bg-gray-100 text-gray-900 border-gray-300 shadow-sm" 
-                    : "bg-gray-50 text-gray-800 border-transparent hover:bg-gray-100 hover:border-gray-200"
-                }`}
-              >
-                <div className="flex items-center min-w-0 flex-1">
-                  <FileText size={14} className={`mr-2 flex-shrink-0 ${activeDocId === doc.id ? "text-blue-500" : "text-gray-500"}`} />
-                  <span className="truncate">{doc.filename}</span>
-                </div>
-                <button
-                  onClick={(e) => handleDelete(doc.id, e)}
-                  className="text-gray-400 hover:text-red-500 ml-2 p-0.5 rounded transition opacity-0 group-hover:opacity-100"
-                  title="Delete document"
+            {documents.map((doc) => {
+              const isProcessing = doc.status === "processing";
+              const isFailed = doc.status === "failed" || doc.status === "empty";
+              const isActive = activeDocId === doc.id;
+
+              return (
+                <div
+                  key={doc.id}
+                  onClick={() => {
+                    if (!isProcessing) {
+                      router.push(`/?docId=${doc.id}&docName=${encodeURIComponent(doc.filename)}`);
+                    }
+                  }}
+                  className={`group rounded-md flex items-center justify-between p-2 text-xs font-medium transition border ${
+                    isProcessing
+                      ? "bg-amber-50/70 text-gray-500 border-amber-200 cursor-wait"
+                      : isFailed
+                      ? "bg-red-50/70 text-red-700 border-red-200 cursor-pointer"
+                      : isActive
+                      ? "bg-gray-100 text-gray-900 border-gray-300 shadow-sm cursor-pointer"
+                      : "bg-gray-50 text-gray-800 border-transparent hover:bg-gray-100 hover:border-gray-200 cursor-pointer"
+                  }`}
+                  title={
+                    isProcessing
+                      ? "Processing document embeddings in the background..."
+                      : isFailed
+                      ? (doc.error_message || "Document processing failed")
+                      : doc.filename
+                  }
                 >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            ))}
+                  <div className="flex items-center min-w-0 flex-1">
+                    {isProcessing ? (
+                      <Loader2 size={14} className="mr-2 flex-shrink-0 text-amber-500 animate-spin" />
+                    ) : isFailed ? (
+                      <AlertCircle size={14} className="mr-2 flex-shrink-0 text-red-500" />
+                    ) : (
+                      <FileText size={14} className={`mr-2 flex-shrink-0 ${isActive ? "text-blue-500" : "text-gray-500"}`} />
+                    )}
+                    <span className="truncate">{doc.filename}</span>
+                  </div>
+                  {isProcessing && (
+                    <span className="text-[9px] text-amber-700 bg-amber-100/90 px-1.5 py-0.5 rounded font-normal mr-1 flex-shrink-0">
+                      Embedding
+                    </span>
+                  )}
+                  <button
+                    onClick={(e) => handleDelete(doc.id, e)}
+                    className="text-gray-400 hover:text-red-500 ml-2 p-0.5 rounded transition opacity-0 group-hover:opacity-100"
+                    title="Delete document"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              );
+            })}
             {isSignedIn && documents.length === 0 && (
               <p className="text-xs text-gray-400 italic p-2">No documents uploaded.</p>
             )}
           </div>
         </div>
+
 
         {/* Dynamic Contextual Upload Area inside Sidebar */}
         {isSignedIn && (
@@ -151,7 +231,7 @@ function SidebarContent() {
               </span>
               <input 
                 type="file" 
-                accept="application/pdf" 
+                accept=".pdf,.docx,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv" 
                 onChange={handleFileChange} 
                 disabled={isUploading} 
                 className="hidden" 

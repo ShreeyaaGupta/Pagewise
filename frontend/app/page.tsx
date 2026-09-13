@@ -2,18 +2,23 @@
 
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
-import { SendHorizontal, Bot, Sparkles } from "lucide-react";
+import { SendHorizontal, Bot, Sparkles, FileText } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
-interface Source {
-  title: string;
-  url: string;
+interface DocSource {
+  filename: string;
+  page_number?: number | null;
+  snippet?: string;
+}
+
+interface SourcesPayload {
+  documents?: DocSource[];
 }
 
 interface Message {
   role: "user" | "assistant";
   content: string;
-  sources?: Source[]; 
+  sources?: SourcesPayload; 
 }
 
 function ChatInterface() {
@@ -37,7 +42,12 @@ function ChatInterface() {
       
       if (docId) {
         try {
-          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chat/history?user_id=${user.id}&document_id=${docId}`);
+          const token = await getToken();
+          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/chat/history?document_id=${docId}`, {
+            headers: {
+              "Authorization": `Bearer ${token}`
+            }
+          });
           if (res.ok) {
             const data = await res.json();
             if (isMounted) setMessages(data);
@@ -93,8 +103,26 @@ function ChatInterface() {
         }),
       });
       
-      if (!response.ok || !response.body) {
-        throw new Error("Failed to initialize text stream from backend.");
+      if (!response.ok) {
+        let errMessage = `Server error (${response.status})`;
+        try {
+          const errData = await response.json();
+          if (typeof errData.detail === "string") {
+            errMessage = errData.detail;
+          } else if (Array.isArray(errData.detail)) {
+            errMessage = errData.detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ");
+          } else if (errData.detail) {
+            errMessage = JSON.stringify(errData.detail);
+          }
+        } catch {
+          const rawText = await response.text().catch(() => "");
+          if (rawText) errMessage = rawText;
+        }
+        throw new Error(errMessage);
+      }
+
+      if (!response.body) {
+        throw new Error("Empty response body from server.");
       }
 
       const reader = response.body.getReader();
@@ -117,14 +145,15 @@ function ChatInterface() {
             const updated = [...prev];
             const lastIndex = updated.length - 1;
             let newContent = updated[lastIndex].content + chunkText;
-            let newSources = updated[lastIndex].sources;
+            let newSources: SourcesPayload | undefined = updated[lastIndex].sources;
 
             if (newContent.includes("<<<SOURCES>>>")) {
               const parts = newContent.split("<<<SOURCES>>>");
               newContent = parts[0].trim(); 
               
               try {
-                newSources = JSON.parse(parts[1]);
+                const parsed = JSON.parse(parts[1]);
+                newSources = parsed;
               } catch (e) {
                 // Ignore parsing errors during stream
               }
@@ -139,12 +168,12 @@ function ChatInterface() {
           });
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       setIsThinking(false);
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "Error communicating with the generation server." },
+        { role: "assistant", content: err?.message || "Error communicating with the generation server." },
       ]);
     } finally {
       setIsGenerating(false);
@@ -203,26 +232,23 @@ function ChatInterface() {
               >
                 {msg.content || (isGenerating && index === messages.length - 1 ? "..." : "")}
                 
-                {msg.sources && msg.sources.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2 border-t border-gray-100 pt-3">
-                    {msg.sources.map((source, i) => (
-                      <a 
-                        key={i} 
-                        href={source.url} 
-                        title={source.url} // Browser tooltip for URL
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-center bg-gray-50 border border-gray-200 rounded-md p-1.5 hover:bg-gray-100 hover:border-gray-300 transition shadow-sm"
+                {msg.sources && msg.sources.documents && msg.sources.documents.length > 0 && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
+                    {/* Local Document Citations with Page Numbers */}
+                    {msg.sources.documents.map((docSource, i) => (
+                      <div 
+                        key={`doc-${i}`} 
+                        title={docSource.snippet ? `Snippet: "${docSource.snippet}"` : docSource.filename}
+                        className="flex items-center gap-1.5 bg-blue-50/90 border border-blue-200 text-blue-900 rounded-md px-2 py-1 text-xs font-medium shadow-2xs hover:bg-blue-100 transition cursor-help"
                       >
-                        <img 
-                          src={`https://www.google.com/s2/favicons?domain=${new URL(source.url).hostname}&sz=32`} 
-                          alt="source favicon" 
-                          className="w-4 h-4 rounded-sm flex-shrink-0"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71'%3E%3C/path%3E%3Cpath d='M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'%3E%3C/path%3E%3C/svg%3E";
-                          }}
-                        />
-                      </a>
+                        <FileText size={12} className="text-blue-600 flex-shrink-0" />
+                        <span className="truncate max-w-[140px]">{docSource.filename}</span>
+                        {docSource.page_number && (
+                          <span className="bg-blue-200/80 text-blue-900 text-[10px] font-semibold px-1 py-0.2 rounded">
+                            p. {docSource.page_number}
+                          </span>
+                        )}
+                      </div>
                     ))}
                   </div>
                 )}
@@ -230,6 +256,7 @@ function ChatInterface() {
             </div>
           ))
         )}
+
         {isThinking && (
           <div className="flex w-full max-w-3xl mx-auto animate-pulse">
             <div className="w-fit max-w-full text-sm leading-relaxed text-gray-400 py-2 flex items-center gap-2">

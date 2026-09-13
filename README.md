@@ -5,7 +5,7 @@ Pagewise is a RAG-based document Q&A platform built for exploring and querying p
 ## Features
 
 - **Authentication** — User accounts and session management via Clerk.
-- **Full RAG Pipeline** — Document ingestion, chunking, embedding, and retrieval powered by Supabase, Neon (Postgres), and Tavily.
+- **Full RAG Pipeline** — Document ingestion, chunking, embedding, and retrieval powered by Supabase, Neon (Postgres), and pgvector.
 - **Citation Sourcing** — Answers are grounded in retrieved chunks with inline citations back to the source document.
 - **Document Management** — Seamless upload, save, and deletion of documents directly from the sidebar.
 - **Scoped Document Context** — When multiple documents exist in a user's profile, a specific document can be brought into active context for focused Q&A, rather than searching across the entire library.
@@ -17,7 +17,7 @@ Pagewise is a RAG-based document Q&A platform built for exploring and querying p
 | Auth | Clerk |
 | Database | Neon (Postgres) |
 | Backend-as-a-Service | Supabase |
-| Search / Retrieval | Tavily |
+| LLM & Embeddings | Groq, Sentence-Transformers |
 | Frontend | Next.js |
 
 ## How It Works
