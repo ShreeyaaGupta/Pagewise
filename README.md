@@ -1,30 +1,116 @@
 # Pagewise
 
-Pagewise is a RAG-based document Q&A platform built for exploring and querying personal documents (PDFs, PPTX, DOCX, images) with source-grounded, cited answers.
+> Full-stack Retrieval-Augmented Generation (RAG) platform with Hybrid Search (Vector + Full-Text Search), local CPU embeddings, and real-time, cited conversational AI.
 
-## Features
+---
 
-- **Authentication** — User accounts and session management via Clerk.
-- **Full RAG Pipeline** — Document ingestion, chunking, embedding, and retrieval powered by Supabase, Neon (Postgres), and pgvector.
-- **Citation Sourcing** — Answers are grounded in retrieved chunks with inline citations back to the source document.
-- **Document Management** — Seamless upload, save, and deletion of documents directly from the sidebar.
-- **Scoped Document Context** — When multiple documents exist in a user's profile, a specific document can be brought into active context for focused Q&A, rather than searching across the entire library.
+## ⚡ Features
 
-## Tech Stack
+- **Multi-Format Ingestion:** Seamlessly upload and parse `.pdf`, `.docx`, and `.csv` files with instant SHA-256 deduplication.
+- **Local CPU Embeddings:** Uses `FastEmbed` (`all-MiniLM-L6-v2` via ONNX) for 384-dimensional embeddings with **$0 API cost** and **zero network latency**.
+- **PostgreSQL Hybrid Search:** Combines dense semantic search (`pgvector` cosine distance) and sparse keyword search (`tsvector` Full-Text Search) using **Reciprocal Rank Fusion (RRF)**.
+- **Ultra-Fast LLM Streaming:** Streams answers token-by-token at 200+ tokens/sec powered by **Groq** LPU inference with automatic model fallback.
+- **Grounded Source Citations:** Delivers verified page-level citations extracted directly from database chunks, eliminating hallucinated references.
+- **Stateless Asymmetric Auth:** Verified in-memory via **Clerk JWKS** (`RS256`), ensuring complete multi-tenant data isolation.
+
+---
+
+## 🛠️ Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Auth | Clerk |
-| Database | Neon (Postgres) |
-| Backend-as-a-Service | Supabase |
-| LLM & Embeddings | Groq, Sentence-Transformers |
-| Frontend | Next.js |
+| **Frontend** | Next.js 16 (App Router), React 19, TailwindCSS v4, Lucide Icons |
+| **Backend** | FastAPI (Python 3.11), Uvicorn, SlowAPI rate limiting, Loguru |
+| **Database & Search** | PostgreSQL (Neon Serverless) with `pgvector` & Full-Text Search (FTS) |
+| **Embeddings** | FastEmbed (`sentence-transformers/all-MiniLM-L6-v2` via ONNX) |
+| **LLM Inference** | Groq Cloud (`llama-3.3-70b-versatile` / `openai/gpt-oss-120b`) |
+| **Object Storage** | Supabase Storage (S3-compatible API via boto3) |
+| **Authentication** | Clerk (JWT with RS256 JWKS validation) |
 
-## How It Works
+---
 
-1. **Upload** — User uploads a document (PDF/PPTX/DOCX/image), which is stored and processed.
-2. **Chunk & Embed** — Document content is split into chunks and embedded for semantic retrieval.
-3. **Query** — User asks a question; relevant chunks are retrieved via the RAG pipeline.
-4. **Answer with Citations** — The model generates a response grounded in retrieved chunks, with citations pointing back to the source.
-5. **Context Scoping** — Users can select a specific document from their sidebar to scope the conversation, or query across all documents.
+## 🚀 Running Locally
 
+### Prerequisites
+- **Python 3.10+**
+- **Node.js 18+** & `npm`
+- Accounts for: [Clerk](https://clerk.com), [Neon PostgreSQL](https://neon.tech), [Groq Cloud](https://console.groq.com), and [Supabase](https://supabase.com).
+
+---
+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/ShreeyaaGupta/Pagewise.git
+cd Pagewise
+```
+
+---
+
+### 2. Backend Setup
+
+1. Create and activate a Python virtual environment:
+   ```bash
+   python -m venv .venv
+   
+   # Windows (PowerShell):
+   .venv\Scripts\Activate.ps1
+
+   # macOS / Linux:
+   source .venv/bin/activate
+   ```
+
+2. Install backend dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. Create `backend/.env` with your credentials:
+   ```env
+   DATABASE_URL="postgresql://<user>:<password>@<host>/<db>?sslmode=require"
+   CLERK_JWKS_URL="https://<your-clerk-instance>.clerk.accounts.dev/.well-known/jwks.json"
+   SUPABASE_ENDPOINT_URL="https://<project-ref>.storage.supabase.co/storage/v1/s3"
+   SUPABASE_ACCESS_KEY_ID="<your-supabase-s3-access-key>"
+   SUPABASE_SECRET_ACCESS_KEY="<your-supabase-s3-secret-key>"
+   SUPABASE_BUCKET_NAME="documents"
+   GROQ_API_KEY="<your-groq-api-key>"
+   ```
+
+4. Start the FastAPI backend server:
+   ```bash
+   cd backend
+   uvicorn main:app --reload --port 8000
+   ```
+   *The backend will be available at `http://localhost:8000` (API docs at `/docs`).*
+
+---
+
+### 3. Frontend Setup
+
+1. Open a new terminal and navigate to the frontend directory:
+   ```bash
+   cd frontend
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Create `frontend/.env.local`:
+   ```env
+   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="<your-clerk-publishable-key>"
+   CLERK_SECRET_KEY="<your-clerk-secret-key>"
+   NEXT_PUBLIC_API_URL="http://localhost:8000"
+   ```
+
+4. Start the Next.js development server:
+   ```bash
+   npm run dev
+   ```
+   *The frontend application will be live at `http://localhost:3000`.*
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
