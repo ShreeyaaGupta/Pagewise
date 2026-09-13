@@ -29,7 +29,7 @@ def test_chat_hybrid_rag(auth_client):
         yield chunk
 
     with patch("main.get_db_connection") as mock_conn, \
-         patch("main.model.encode", return_value=mock_emb), \
+         patch("main.model.embed", return_value=[mock_emb]), \
          patch("main.create_groq_stream_with_retry", new_callable=AsyncMock, return_value=fake_stream()):
         
         mock_conn.return_value.__enter__.return_value = mock_db

@@ -22,7 +22,7 @@ import jwt
 from jwt import PyJWKClient
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from sentence_transformers import SentenceTransformer
+from fastembed import TextEmbedding
 from pydantic import BaseModel
 from typing import Optional
 from groq import AsyncGroq
@@ -181,8 +181,8 @@ app.add_middleware(
 def health_check():
     return {"status": "ok", "message": "Pagewise API is running"}
 
-logger.info("Loading embedding model (all-MiniLM-L6-v2)...")
-model = SentenceTransformer('all-MiniLM-L6-v2')
+logger.info("Loading embedding model (all-MiniLM-L6-v2 via FastEmbed)...")
+model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
 logger.info("Embedding model loaded successfully!")
 
 logger.info("Initializing Groq Client...")
@@ -330,7 +330,7 @@ def process_document_background(file_bytes: bytes, doc_id: str, file_ext: str):
 
         logger.info(f"[{doc_id}] Encoding {len(all_chunks)} chunks...")
         chunk_texts = [c[0] for c in all_chunks]
-        embeddings = model.encode(chunk_texts).tolist()
+        embeddings = [e.tolist() for e in model.embed(chunk_texts)]
 
         records = [
             (str(uuid.uuid4()), doc_id, i, chunk_text, embedding, page_num)
@@ -538,9 +538,9 @@ async def chat_with_document(
         logger.info(f"Chat request started: query='{search.query}', doc_id='{search.document_id}', user_id='{user_id}'")
 
         emb_start = time.perf_counter()
-        query_embedding = await asyncio.to_thread(model.encode, search.query)
+        query_embeddings = await asyncio.to_thread(lambda: list(model.embed([search.query])))
         emb_elapsed_ms = (time.perf_counter() - emb_start) * 1000
-        query_vector = query_embedding.tolist()
+        query_vector = query_embeddings[0].tolist()
         query_vector_str = "[" + ",".join(map(str, query_vector)) + "]"
 
         db_start = time.perf_counter()

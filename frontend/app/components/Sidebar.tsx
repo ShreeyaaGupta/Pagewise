@@ -96,6 +96,9 @@ function SidebarContent() {
 
     const formData = new FormData();
     formData.append("file", selectedFile);
+    if (user?.id) {
+      formData.append("user_id", user.id);
+    }
 
     try {
       const token = await getToken();
